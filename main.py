@@ -1,4 +1,4 @@
-"""Демо: метапоиск легальных книг по IT / ИИ / ИБ без собственной базы.
+"""OpenShelf: метапоиск легальных книг в открытом доступе без собственной базы.
 
 Запрос -> параллельный опрос внешних API -> нормализация -> дедупликация -> прямые ссылки.
 Файлы через наш сервер не проходят: пользователь скачивает с источника.
@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse
 TIMEOUT = 4.0        # секунд на каждый источник
 CACHE_TTL = 3600     # секунд; в проде замените на Redis
 CACHE_MAX = 500
-HEADERS = {"User-Agent": "OpenShelfDemo/0.1 (replace-with-your-contact@example.com)"}
+HEADERS = {"User-Agent": "OpenShelf/0.1 (replace-with-your-contact@example.com)"}
 
 LANGS = {"russian": "ru", "rus": "ru", "ru": "ru", "english": "en", "eng": "en", "en": "en",
          "uzbek": "uz", "uzb": "uz", "uz": "uz"}
@@ -63,10 +63,18 @@ class Book:
 
 
 # ---------------------------------------------------------------- адаптеры
+def ia_query(q: str) -> str:
+    """Все слова обязательны и ищутся в названии, темах или авторе."""
+    words = [w.strip("+-") for w in q.split()]
+    phrase = " AND ".join(w for w in words if w)
+    return (f"(title:({phrase}) OR subject:({phrase}) OR creator:({phrase}))"
+            " AND mediatype:texts AND -access-restricted-item:true")
+
+
 async def ia_search(c: httpx.AsyncClient, q: str, n: int) -> list[Book]:
-    """Internet Archive: только неограниченный доступ."""
+    """Internet Archive: только неограниченный доступ, совпадение по названию/теме/автору."""
     r = await c.get("https://archive.org/advancedsearch.php", params={
-        "q": f"({q}) AND mediatype:texts AND -access-restricted-item:true",
+        "q": ia_query(q),
         "fl[]": ["identifier", "title", "creator", "year", "language", "licenseurl"],
         "sort[]": "downloads desc", "rows": n, "output": "json"})
     r.raise_for_status()
@@ -78,7 +86,7 @@ async def ia_search(c: httpx.AsyncClient, q: str, n: int) -> list[Book]:
             authors=[str(a) for a in as_list(d.get("creator"))],
             year=to_year(d.get("year")),
             languages=[norm_lang(x) for x in as_list(d.get("language"))],
-            license=cc_label(d.get("licenseurl")) or "свободный доступ",
+            license=cc_label(d.get("licenseurl")) or "лицензия не указана",
             links=[{"source": "Internet Archive", "kind": "download", "url": f"https://archive.org/download/{i}"},
                    {"source": "Internet Archive", "kind": "read", "url": f"https://archive.org/details/{i}"}]))
     return out
@@ -194,12 +202,10 @@ async def run_source(name, fn, c, q, n):
         return name, [], {"ok": False, "count": 0, "error": type(e).__name__}
 
 
-async def federated_search(c: httpx.AsyncClient, q: str, lang: str, n: int) -> dict:
+async def federated_search(c: httpx.AsyncClient, q: str, n: int) -> dict:
     t = time.perf_counter()
     res = await asyncio.gather(*(run_source(k, f, c, q, n) for k, f in ADAPTERS.items()))
     books = merge([b for _, bs, _ in res for b in bs])
-    if lang != "any":
-        books = [b for b in books if not b.languages or lang in b.languages]
     books.sort(key=score)
     return {"query": q, "took_ms": int((time.perf_counter() - t) * 1000),
             "sources": {name: st for name, _, st in res},
@@ -219,21 +225,20 @@ async def lifespan(app: FastAPI):
     await app.state.http.aclose()
 
 
-app = FastAPI(title="OpenShelf demo", lifespan=lifespan)
+app = FastAPI(title="OpenShelf", lifespan=lifespan)
 
 
 @app.get("/api/search")
 async def search(q: str = Query(..., min_length=2, max_length=100),
-                 lang: str = Query("any", pattern="^(any|ru|en|uz)$"),
                  limit: int = Query(10, ge=1, le=25)):
     q = re.sub(r"[^\w\s\-+.#]", " ", q, flags=re.U).strip()   # убираем синтаксис Lucene
     if len(q) < 2:
         return {"query": q, "took_ms": 0, "sources": {}, "results": []}
-    key = (q.lower(), lang, limit)
+    key = (q.lower(), limit)
     hit = cache.get(key)
     if hit and time.time() - hit[0] < CACHE_TTL:
         return hit[1]
-    data = await federated_search(app.state.http, q, lang, limit)
+    data = await federated_search(app.state.http, q, limit)
     if any(s["ok"] for s in data["sources"].values()):        # не кэшируем полный отказ
         if len(cache) >= CACHE_MAX:
             cache.pop(next(iter(cache)))

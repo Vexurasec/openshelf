@@ -17,9 +17,8 @@ form{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
 .q input{width:100%;font:500 clamp(20px,4vw,28px)/1.3 "Iowan Old Style",Georgia,serif;color:var(--ink);background:transparent;border:0;border-bottom:2px solid var(--ink);padding:8px 0;border-radius:0}
 .q input::placeholder{color:var(--mute);opacity:.7}
 .q input:focus{outline:none;border-color:var(--acc)}
-select,button{font:inherit;padding:10px 14px;border-radius:6px;border:1px solid var(--rule);background:transparent;color:var(--ink)}
-button{background:var(--acc);color:var(--acc-ink);border-color:var(--acc);font-weight:600;cursor:pointer}
-button:focus-visible,select:focus-visible,a:focus-visible,.try:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+button{font:inherit;padding:10px 14px;border-radius:6px;border:1px solid var(--acc);background:var(--acc);color:var(--acc-ink);font-weight:600;cursor:pointer}
+button:focus-visible,a:focus-visible,.try:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 .try-row{margin:16px 0 0;color:var(--mute);font-size:14px}
 .try{background:none;border:0;padding:0 2px;color:var(--acc);text-decoration:underline;cursor:pointer;font:inherit;font-weight:400}
 #status{margin:32px 0 8px;display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--mute)}
@@ -34,8 +33,8 @@ li h2{font:600 20px/1.3 "Iowan Old Style",Georgia,serif;margin:0 0 4px}
 .links a.dl{background:var(--acc);color:var(--acc-ink);border-color:var(--acc);font-weight:600}
 .empty{color:var(--mute);padding:24px 0}
 .note{margin-top:48px;font-size:13px;color:var(--mute);border-top:1px solid var(--rule);padding-top:16px}
-@media (prefers-reduced-motion:no-preference){li{animation:in .25s ease-out both}@keyframes in{from{opacity:0}to{opacity:1}}}
 .credit{margin-top:12px;font-size:13px;color:var(--mute)}
+@media (prefers-reduced-motion:no-preference){li{animation:in .25s ease-out both}@keyframes in{from{opacity:0}to{opacity:1}}}
 </style>
 </head>
 <body>
@@ -44,16 +43,13 @@ li h2{font:600 20px/1.3 "Iowan Old Style",Georgia,serif;margin:0 0 4px}
   <p class="lead">Ищем в открытых библиотеках в реальном времени и даём ссылку на источник. Только легально доступные издания, своей базы у сервиса нет.</p>
 
   <form id="f">
-    <label class="q"><span hidden>Запрос</span><input id="q" name="q" placeholder="Например: cryptography engineering" autocomplete="off" required minlength="2"></label>
-    <label><span hidden>Язык</span>
-      <select id="lang"><option value="any">Любой язык</option><option value="ru">Русский</option><option value="en">English</option><option value="uz">O‘zbekcha</option></select>
-    </label>
+    <label class="q"><span hidden>Запрос</span><input id="q" name="q" placeholder="Название, автор или тема" autocomplete="off" required minlength="2"></label>
     <button type="submit">Найти</button>
   </form>
   <p class="try-row">Попробуйте:
-    <button class="try" type="button">malware analysis</button>,
+    <button class="try" type="button">world history</button>,
     <button class="try" type="button">machine learning</button>,
-    <button class="try" type="button">applied cryptography</button>
+    <button class="try" type="button">philosophy</button>
   </p>
 
   <div id="status" aria-live="polite"></div>
@@ -67,14 +63,14 @@ const $ = s => document.querySelector(s);
 const safe = u => /^https?:\/\//i.test(u) ? u : "#";
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
 
-async function search(q, lang) {
+async function search(q) {
   $("#out").replaceChildren(); $("#status").textContent = "Ищем…";
   let data;
   try {
-    const r = await fetch(`/api/search?q=${encodeURIComponent(q)}&lang=${lang}`);
+    const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
     if (!r.ok) throw new Error(r.status);
     data = await r.json();
-  } catch { $("#status").textContent = "Сервер не ответил. Проверьте, что он запущен, и повторите запрос."; return; }
+  } catch { $("#status").textContent = "Сервер не ответил. Повторите запрос через минуту."; return; }
 
   const st = $("#status"); st.replaceChildren();
   for (const [name, s] of Object.entries(data.sources)) {
@@ -82,7 +78,7 @@ async function search(q, lang) {
   }
   st.append(el("span", "", `${data.took_ms} мс`));
 
-  if (!data.results.length) { $("#out").append(el("p", "empty", "Ничего не найдено. Попробуйте название на английском или другой язык в фильтре.")); return; }
+  if (!data.results.length) { $("#out").append(el("p", "empty", "Ничего не найдено. Попробуйте другое название или запрос на английском.")); return; }
 
   for (const b of data.results) {
     const li = el("li");
@@ -101,8 +97,8 @@ async function search(q, lang) {
   }
 }
 
-$("#f").addEventListener("submit", e => { e.preventDefault(); search($("#q").value.trim(), $("#lang").value); });
-document.querySelectorAll(".try").forEach(b => b.addEventListener("click", () => { $("#q").value = b.textContent; search(b.textContent, $("#lang").value); }));
+$("#f").addEventListener("submit", e => { e.preventDefault(); search($("#q").value.trim()); });
+document.querySelectorAll(".try").forEach(b => b.addEventListener("click", () => { $("#q").value = b.textContent; search(b.textContent); }));
 </script>
 </body>
 </html>
