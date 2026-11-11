@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenShelf — легальные книги по IT, ИИ и ИБ</title>
+<style>
+:root{--bg:#f1f4f3;--ink:#16202a;--mute:#5a6770;--rule:#c9d1d4;--acc:#0b6e6e;--acc-ink:#fff;--bad:#9a3b3b}
+@media (prefers-color-scheme:dark){:root{--bg:#141b1f;--ink:#e6ecee;--mute:#92a1a8;--rule:#2b373d;--acc:#4fb8b0;--acc-ink:#0e1517;--bad:#e08a8a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:760px;margin:0 auto;padding:56px 20px 80px}
+h1{font:600 clamp(28px,5vw,40px)/1.15 "Iowan Old Style",Georgia,"Times New Roman",serif;margin:0 0 10px;letter-spacing:-.01em}
+.lead{color:var(--mute);margin:0 0 36px;max-width:56ch}
+form{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.q{flex:1 1 320px}
+.q input{width:100%;font:500 clamp(20px,4vw,28px)/1.3 "Iowan Old Style",Georgia,serif;color:var(--ink);background:transparent;border:0;border-bottom:2px solid var(--ink);padding:8px 0;border-radius:0}
+.q input::placeholder{color:var(--mute);opacity:.7}
+.q input:focus{outline:none;border-color:var(--acc)}
+select,button{font:inherit;padding:10px 14px;border-radius:6px;border:1px solid var(--rule);background:transparent;color:var(--ink)}
+button{background:var(--acc);color:var(--acc-ink);border-color:var(--acc);font-weight:600;cursor:pointer}
+button:focus-visible,select:focus-visible,a:focus-visible,.try:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.try-row{margin:16px 0 0;color:var(--mute);font-size:14px}
+.try{background:none;border:0;padding:0 2px;color:var(--acc);text-decoration:underline;cursor:pointer;font:inherit;font-weight:400}
+#status{margin:32px 0 8px;display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--mute)}
+#status .off{color:var(--bad);text-decoration:line-through}
+ol{list-style:none;margin:0;padding:0}
+li{padding:20px 0;border-top:1px solid var(--rule)}
+li h2{font:600 20px/1.3 "Iowan Old Style",Georgia,serif;margin:0 0 4px}
+.meta{color:var(--mute);font-size:14px}
+.lic{display:inline-block;border:1px solid var(--acc);color:var(--acc);border-radius:4px;padding:0 6px;font-size:12px;margin-left:6px}
+.links{margin-top:10px;display:flex;flex-wrap:wrap;gap:8px}
+.links a{font-size:14px;padding:6px 12px;border-radius:6px;text-decoration:none;border:1px solid var(--rule);color:var(--ink)}
+.links a.dl{background:var(--acc);color:var(--acc-ink);border-color:var(--acc);font-weight:600}
+.empty{color:var(--mute);padding:24px 0}
+.note{margin-top:48px;font-size:13px;color:var(--mute);border-top:1px solid var(--rule);padding-top:16px}
+@media (prefers-reduced-motion:no-preference){li{animation:in .25s ease-out both}@keyframes in{from{opacity:0}to{opacity:1}}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Книги по IT, ИИ и кибербезопасности</h1>
+  <p class="lead">Ищем в открытых библиотеках в реальном времени и даём ссылку на источник. Только легально доступные издания, своей базы у сервиса нет.</p>
+
+  <form id="f">
+    <label class="q"><span hidden>Запрос</span><input id="q" name="q" placeholder="Например: cryptography engineering" autocomplete="off" required minlength="2"></label>
+    <label><span hidden>Язык</span>
+      <select id="lang"><option value="any">Любой язык</option><option value="ru">Русский</option><option value="en">English</option><option value="uz">O‘zbekcha</option></select>
+    </label>
+    <button type="submit">Найти</button>
+  </form>
+  <p class="try-row">Попробуйте:
+    <button class="try" type="button">malware analysis</button>,
+    <button class="try" type="button">machine learning</button>,
+    <button class="try" type="button">applied cryptography</button>
+  </p>
+
+  <div id="status" aria-live="polite"></div>
+  <ol id="out"></ol>
+
+  <p class="note">Ссылки «Скачать» ведут на сайт источника. Лицензия указана по данным источника, перед использованием проверьте условия на странице книги.</p>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const safe = u => /^https?:\/\//i.test(u) ? u : "#";
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
+
+async function search(q, lang) {
+  $("#out").replaceChildren(); $("#status").textContent = "Ищем…";
+  let data;
+  try {
+    const r = await fetch(`/api/search?q=${encodeURIComponent(q)}&lang=${lang}`);
+    if (!r.ok) throw new Error(r.status);
+    data = await r.json();
+  } catch { $("#status").textContent = "Сервер не ответил. Проверьте, что он запущен, и повторите запрос."; return; }
+
+  const st = $("#status"); st.replaceChildren();
+  for (const [name, s] of Object.entries(data.sources)) {
+    st.append(el("span", s.ok ? "" : "off", s.ok ? `${name}: ${s.count}` : `${name}: нет ответа`));
+  }
+  st.append(el("span", "", `${data.took_ms} мс`));
+
+  if (!data.results.length) { $("#out").append(el("p", "empty", "Ничего не найдено. Попробуйте название на английском или другой язык в фильтре.")); return; }
+
+  for (const b of data.results) {
+    const li = el("li");
+    const h = el("h2", "", b.title);
+    if (b.license) h.append(el("span", "lic", b.license));
+    li.append(h);
+    const meta = [b.authors.join(", "), b.year, b.languages.join("/")].filter(Boolean).join(" · ");
+    if (meta) li.append(el("div", "meta", meta));
+    const links = el("div", "links");
+    for (const l of b.links) {
+      const a = el("a", l.kind === "download" ? "dl" : "", `${l.kind === "download" ? "Скачать" : "Открыть"} · ${l.source}`);
+      a.href = safe(l.url); a.target = "_blank"; a.rel = "noopener noreferrer";
+      links.append(a);
+    }
+    li.append(links); $("#out").append(li);
+  }
+}
+
+$("#f").addEventListener("submit", e => { e.preventDefault(); search($("#q").value.trim(), $("#lang").value); });
+document.querySelectorAll(".try").forEach(b => b.addEventListener("click", () => { $("#q").value = b.textContent; search(b.textContent, $("#lang").value); }));
+</script>
+</body>
+</html>
